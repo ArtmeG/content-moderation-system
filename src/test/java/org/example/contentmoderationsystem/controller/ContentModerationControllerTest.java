@@ -1,51 +1,62 @@
 package org.example.contentmoderationsystem.controller;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.example.contentmoderationsystem.service.ContentModerationService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.io.PrintWriter;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.*;
 
-@WebMvcTest(ContentModerationController.class)
-@AutoConfigureMockMvc
 class ContentModerationControllerTest {
-    @Autowired
-    private MockMvc mockMvc;
 
-    @MockBean
+    @Mock
     private ContentModerationService contentModerationService;
 
-    @Test
-    void testProcessCSVEndpoint() throws Exception {
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "test.csv", MediaType.TEXT_PLAIN_VALUE
-                , "user_id,message\n1,Hello world".getBytes());
+    private ContentModerationController contentModerationController;
 
-        mockMvc.perform(MockMvcRequestBuilders.multipart("/api/process-csv")
-                        .file(file))
-                .andExpect(MockMvcResultMatchers.status().isOk());
-
-        verify(contentModerationService).processCSV(any(), any(PrintWriter.class));
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.initMocks(this);
+        contentModerationController = new ContentModerationController(contentModerationService);
     }
 
     @Test
-    void testProcessCSVEndpoint_EmptyFile() throws Exception {
-        MockMultipartFile file = new MockMultipartFile("file", "test_empty.csv"
-                , MediaType.TEXT_PLAIN_VALUE, new byte[0]);
+    void processCSV_EmptyFile() throws IOException {
+        // Given
+        MultipartFile file = new MockMultipartFile("test.csv", new byte[0]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
 
-        mockMvc.perform(MockMvcRequestBuilders.multipart("/api/process-csv")
-                        .file(file))
-                .andExpect(MockMvcResultMatchers.status().isBadRequest());
+        // When
+        contentModerationController.processCSV(file, response);
+
+        // Then
+        verify(contentModerationService, never()).processCSV(any(), any());
+        assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.getStatus());
+    }
+
+    @Test
+    void processCSV_SuccessfulProcessing() throws IOException {
+        // Given
+        String csvContent = "user1,message1\nuser2,message2";
+        MultipartFile file = new MockMultipartFile("test.csv", new ByteArrayInputStream(csvContent.getBytes()));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        // When
+        contentModerationController.processCSV(file, response);
+
+        // Then
+        verify(contentModerationService, times(1)).processCSV(eq(file), any());
+        assertEquals(HttpServletResponse.SC_OK, response.getStatus());
+        assertEquals("text/csv", response.getContentType());
+        assertEquals("attachment; filename=processed.csv", response.getHeader("Content-Disposition"));
     }
 }
